@@ -8,24 +8,24 @@ using Newtonsoft.Json.Linq;
 
 using Debug = System.Diagnostics.Debug;
 
-
 public class SocketManager : MonoBehaviour
 {
     public SocketIOUnity socket;
 
     public InputField EventNameTxt;
     public InputField DataTxt;
-    public Text ReceivedText;  
+    public Text ReceivedText;
 
     public GameObject objectToSpin;
 
     public string host = "localhost";
     public string port = "3000";
 
-    // Start is called before the first frame update
+    // Variable para controlar la distancia de movimiento por cada clic
+    public float moveDistance = 1f;
+
     void Start()
     {
-        //TODO: check the Uri if Valid.
         var uri = new Uri($"http://{host}:{port}");
         socket = new SocketIOUnity(uri, new SocketIOOptions
         {
@@ -40,7 +40,6 @@ public class SocketManager : MonoBehaviour
         });
         socket.JsonSerializer = new NewtonsoftJsonSerializer();
 
-        ///// reserved socketio events
         socket.OnConnected += (sender, e) =>
         {
             Debug.Print("socket.OnConnected");
@@ -61,7 +60,6 @@ public class SocketManager : MonoBehaviour
         {
             Debug.Print($"{DateTime.Now} Reconnecting: attempt = {e}");
         };
-        ////
 
         Debug.Print("Connecting...");
         socket.Connect();
@@ -69,6 +67,14 @@ public class SocketManager : MonoBehaviour
         socket.OnUnityThread("spin", (data) =>
         {
             rotateAngle = 0;
+        });
+
+        // Escucha confirmaciones de movimiento del servidor
+        socket.OnUnityThread("move", (data) =>
+        {
+            var x = data.GetValue<JToken>()["x"];
+            var y = data.GetValue<JToken>()["y"];
+            UnityEngine.Debug.Log($"Confirmación del servidor - X: {x}, Y: {y}");
         });
 
         ReceivedText.text = "";
@@ -80,11 +86,47 @@ public class SocketManager : MonoBehaviour
 
     async void OnApplicationQuit()
     {
-        if (socket != null && socket.Connected) 
+        if (socket != null && socket.Connected)
         {
             await socket.DisconnectAsync();
         }
         socket?.Dispose();
+    }
+
+    public void MoveUp()
+    {
+        ApplyMovement(new Vector3(0, moveDistance, 0));
+    }
+
+    public void MoveDown()
+    {
+        ApplyMovement(new Vector3(0, -moveDistance, 0));
+    }
+
+    public void MoveLeft()
+    {
+        ApplyMovement(new Vector3(-moveDistance, 0, 0));
+    }
+
+    public void MoveRight()
+    {
+        ApplyMovement(new Vector3(moveDistance, 0, 0));
+    }
+
+    private void ApplyMovement(Vector3 direction)
+    {
+        if (objectToSpin != null)
+        {
+            objectToSpin.transform.position += direction;
+            Vector3 pos = objectToSpin.transform.position;
+
+            // Impresión en la consola de Unity
+            UnityEngine.Debug.Log($"Movimiento - X: {pos.x}, Y: {pos.y}");
+
+            // Envío de coordenadas al servidor
+            var data = new { x = pos.x, y = pos.y };
+            socket.Emit("move", data);
+        }
     }
 
     public void EmitTest()
@@ -105,14 +147,15 @@ public class SocketManager : MonoBehaviour
     {
         if (string.IsNullOrWhiteSpace(str)) { return false; }
         str = str.Trim();
-        if ((str.StartsWith("{") && str.EndsWith("}")) || //For object
-            (str.StartsWith("[") && str.EndsWith("]"))) //For array
+        if ((str.StartsWith("{") && str.EndsWith("}")) ||
+            (str.StartsWith("[") && str.EndsWith("]")))
         {
             try
             {
                 var obj = JToken.Parse(str);
                 return true;
-            }catch (Exception ex) //some other exception
+            }
+            catch (Exception ex)
             {
                 Console.WriteLine(ex.ToString());
                 return false;
@@ -136,7 +179,6 @@ public class SocketManager : MonoBehaviour
         socket.Emit("class", testClass2);
     }
 
-    // our test class
     [System.Serializable]
     class TestClass
     {
@@ -158,14 +200,13 @@ public class SocketManager : MonoBehaviour
             this.text = text;
         }
     }
-    //
-
 
     float rotateAngle = 45;
     readonly float MaxRotateAngle = 45;
+
     void Update()
     {
-        if(rotateAngle < MaxRotateAngle)
+        if (rotateAngle < MaxRotateAngle)
         {
             rotateAngle++;
             objectToSpin.transform.Rotate(0, 1, 0);
